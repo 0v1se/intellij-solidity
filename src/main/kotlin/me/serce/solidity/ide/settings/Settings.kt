@@ -7,9 +7,12 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.options.SearchableConfigurable
+import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.Project
 import com.intellij.util.io.isDirectory
 import com.intellij.util.io.isFile
 import com.intellij.util.xmlb.XmlSerializerUtil
+import me.serce.solidity.ide.interop.Sol2JavaGenerationStyle
 import org.jetbrains.annotations.Nls
 import java.net.URLClassLoader
 import java.nio.file.Files
@@ -20,8 +23,16 @@ import javax.swing.JComponent
 
 @State(name = "SoliditySettings", storages = arrayOf(Storage("other.xml")))
 class SoliditySettings : PersistentStateComponent<SoliditySettings> {
-  var pathToEvm: String? = null
-  var pathToDb: String? = null
+  var pathToEvm: String = ""
+  var pathToDb: String = ""
+  var solcPath: String = ""
+  var useSolcEthereum: Boolean = true
+  var useSolcJ: Boolean = false
+  var generateJavaStubs: Boolean = false
+  var dependenciesAutoRefresh: Boolean = true
+  var basePackage: String = "com.myfirm.mypackage"
+  var genStyle: Sol2JavaGenerationStyle = Sol2JavaGenerationStyle.WEB3J
+  var genOutputPath: String = "src-gen"
 
   override fun getState(): SoliditySettings? {
     return this
@@ -32,13 +43,13 @@ class SoliditySettings : PersistentStateComponent<SoliditySettings> {
   }
 
   fun validateEvm(): Boolean {
-    return Companion.validateEvm(pathToEvm)
+    return validateEvm(pathToEvm)
   }
 
   companion object {
 
-    fun getUrls(path: String?) : List<Path> {
-      if (path.isNullOrBlank()) {
+    fun getUrls(path: String): List<Path> {
+      if (path.isBlank()) {
         return emptyList()
       }
       val p = Paths.get(path)
@@ -51,11 +62,11 @@ class SoliditySettings : PersistentStateComponent<SoliditySettings> {
       return files
     }
 
-    fun validateEvm(path: String?): Boolean {
+    fun validateEvm(path: String): Boolean {
       return checkJars(path)
     }
 
-    private fun checkJars(path: String?): Boolean {
+    private fun checkJars(path: String): Boolean {
       val files = getUrls(path).toMutableList()
       
       if (files.isEmpty()) return false
@@ -92,7 +103,7 @@ class SoliditySettingsConfigurable(private val mySettings: SoliditySettings) : S
 
   override fun createComponent(): JComponent? {
     myPanel = SolidityConfigurablePanel()
-    return myPanel!!.myEvmPathPanel
+    return myPanel!!.mainPanel
   }
 
   override fun isModified(): Boolean {
@@ -114,6 +125,10 @@ class SoliditySettingsConfigurable(private val mySettings: SoliditySettings) : S
 
   override fun getId(): String {
     return helpTopic
+  }
+
+  fun getQuickFix(project: Project): Runnable {
+    return Runnable { ShowSettingsUtil.getInstance().editConfigurable(project, this) }
   }
 }
 

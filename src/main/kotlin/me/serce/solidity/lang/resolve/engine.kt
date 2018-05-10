@@ -22,11 +22,25 @@ object SolResolver {
       CachedValueProvider.Result.create(result, PsiModificationTracker.MODIFICATION_COUNT)
     }
 
-  private fun resolveContractUsingImports(element: SolReferenceElement, file: PsiFile): Set<SolContractDefinition> =
+  private fun resolveContractUsingImports(element: SolNamedElement, file: PsiFile): Set<SolContractDefinition> =
     RecursionManager.doPreventingRecursion(file, true) {
       val inFile = file.children
         .filterIsInstance<SolContractDefinition>()
         .filter { it.name == element.name }
+
+      val resolvedViaAlias = file.children
+        .filterIsInstance<SolImportDirective>()
+        .mapNotNull { directive ->
+          directive.importAliasedPairList
+            .firstOrNull { aliasPair -> aliasPair.importAlias?.name == element.name }
+            ?.let {aliasPair ->
+              directive.importPath?.reference?.resolve()?.let {resolvedFile ->
+                aliasPair.userDefinedTypeName to resolvedFile
+              }
+            }
+        }.flatMap { (alias, resolvedFile) ->
+          resolveContractUsingImports(alias, resolvedFile.containingFile)
+        }
 
       val imported = file.children
         .filterIsInstance<SolImportDirective>()
@@ -34,7 +48,7 @@ object SolResolver {
         .map { it.containingFile }
         .flatMap { resolveContractUsingImports(element, it) }
 
-      (inFile + imported).toSet()
+      (inFile + resolvedViaAlias + imported).toSet()
     } ?: emptySet()
 
   private fun resolveEnum(element: SolReferenceElement, file: PsiFile): Set<SolNamedElement> =
@@ -45,15 +59,20 @@ object SolResolver {
 
   private fun <T : SolNamedElement> resolveInnerType(element: SolReferenceElement, file: PsiFile, f: (SolContractDefinition) -> List<T>): Set<T> =
     RecursionManager.doPreventingRecursion(file, true) {
-      val contract = element.parentOfType<SolContractDefinition>()
-      if (contract == null) {
+      val inheritanceSpecifier = element.parentOfType<SolInheritanceSpecifier>()
+      if (inheritanceSpecifier != null) {
         emptySet()
       } else {
-        val supers = contract.collectSupers
-          .mapNotNull { it.reference?.resolve() }.filterIsInstance<SolContractDefinition>() + contract
-        supers.flatMap(f)
-          .filter { it.name == element.name }
-          .toSet()
+        val contract = element.parentOfType<SolContractDefinition>()
+        if (contract == null) {
+          emptySet()
+        } else {
+          val supers = contract.collectSupers
+            .mapNotNull { it.reference?.resolve() }.filterIsInstance<SolContractDefinition>() + contract
+          supers.flatMap(f)
+            .filter { it.name == element.name }
+            .toSet()
+        }
       }
     } ?: emptySet()
 
